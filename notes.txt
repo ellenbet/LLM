@@ -1,0 +1,5 @@
+Initial notes
+
+Plan: 
+Raschkas LLM book; How to build an LLM from scratch
+RAG: Retrieval-augmented generation; vectorize parts of pdfs
