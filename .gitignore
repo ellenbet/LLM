@@ -9,6 +9,13 @@
 *.user
 *.userosscache
 *.sln.docstates
+*.ipynb
+*.txt
+*.tsv
+*.csv
+
+# ignore venv 
+llm-venv
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
