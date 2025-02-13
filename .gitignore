@@ -11,6 +11,7 @@
 *.sln.docstates
 *.ipynb
 *.txt
+!requirements.txt
 *.tsv
 *.csv
 

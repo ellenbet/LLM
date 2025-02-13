@@ -1,0 +1,9 @@
+# Requirements for LLM project
+numpy == 2.2.2
+torch == 2.5.1
+
+# for BytePair encoding
+tiktoken == 0.8.0
+
+
+
