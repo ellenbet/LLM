@@ -3,3 +3,44 @@ Initial notes
 Plan: 
 Raschkas LLM book; How to build an LLM from scratch
 RAG: Retrieval-augmented generation; vectorize parts of pdfs
+
+# Attention mechanism - self-attention
+Self-attention is designed to enhance input representations
+by enabling each position in a sequence to engange
+with and determine the relevance of every other position
+within the same sequence. 
+
+"Attending" to different parts of the input. 
+
+For an input sequence x_1 to x_t (such as text):
+- convert this into a token embedding (see embeddings_test.py)
+- For the phrase "i love you", the word "i" is now a vector
+embedding x_1, "love" is vector x_2 ... etc. 
+
+The goal: compute a context vector z_i for each input sequence element
+x_i in x_1 to x_t, where z and x have the same dimensions. 
+- z_i is a weighted sum over inputs x_1 to x_t
+- it is context specific to input
+- the vector z_2 is a weighted sum of all inputs x_1 to x_t, and
+it's weighted with respect to x_2 (the token embedding vector for word "love").
+
+The attention weights are the weights that determine how much each of the input elelemnts 
+contributes to the weighted sum when computing z_i. 
+- z_i can be considered as a modified version of x_i, with information about all other 
+input elements. 
+
+
+How to: find the context vector z
+
+1. chose an x_i to find z_i 
+2. for each x_i: 
+    omega_i,j = dot-product of x_i and all other x-vectors
+    - where j is the other vector x_j 
+
+z_i is a new vector with len(z_i) = len(x_i), and it 
+contains elements omega_i,j where j = len(z_i). 
+
+However - this is not the final z_i, rather the unnormalized attention scores. 
+We normalize then with a built-in softmax (essensially omega_j,i) normalized so
+that it sums up to 1. The result is a set of attention weights 
+a_i,j where a_i,j = normalized(w_i,j)

@@ -22,6 +22,19 @@ dataloader = create_dataloader_v1(raw_text,
                                   max_length = 4, 
                                   stride = 1, )
 
+
+print("Printing sliding windows of size 4 with token id's through example text.")
 data_iter = iter(dataloader)
 first_batch = next(data_iter)
-print(first_batch)
+print("First batch: ", first_batch)
+
+second_batch = next(data_iter)
+print("Second batch: ", second_batch)
+
+print("\nPrinting sliding windows with no overlap and increased batch size")
+dataloader = create_dataloader_v1(raw_text, batch_size=8, max_length=4, stride=4, shuffle=False)
+
+data_iter = iter(dataloader)
+inputs, targets = next(data_iter)
+print("Inputs:\n", inputs)
+print("\nTargets:\n", targets)
