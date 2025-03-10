@@ -41,6 +41,24 @@ z_i is a new vector with len(z_i) = len(x_i), and it
 contains elements omega_i,j where j = len(z_i). 
 
 However - this is not the final z_i, rather the unnormalized attention scores. 
-We normalize then with a built-in softmax (essensially omega_j,i) normalized so
+We normalize then with a built-in softmax (essensially omega_j,i) so
 that it sums up to 1. The result is a set of attention weights 
 a_i,j where a_i,j = normalized(w_i,j)
+
+
+## Buffers in PyTorch
+
+self.register_buffer(x)
+
+Sometimes, masks made with the torch.triu method get stuck on the cpu 
+as you try to transfer your parameters to the gpu/cuda using the
+the to_cuda command. Tensors generally are not automatically tranferred. 
+
+We could say nn.Parameter rather than torch.triu, but the norm is that 
+parameters contain trainable elements. This is why we want to use the 
+register_buffer method in the nn.Module class of pytorch because it will 
+follow the transfer from cpu to gpu. 
+
+Remeber: device issues may be due to cpu vs. gpu issues and can be solved 
+by registering the buffer with the module, although the type will remain a 
+tensor, device will change. 
