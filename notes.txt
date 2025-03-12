@@ -62,3 +62,20 @@ follow the transfer from cpu to gpu.
 Remeber: device issues may be due to cpu vs. gpu issues and can be solved 
 by registering the buffer with the module, although the type will remain a 
 tensor, device will change. 
+
+
+## Text generation: how to measure loss?
+Generally we use the cross-entropy loss function. If we have 
+2 input examples in a batch containing 3 tokens each and a 
+token dimension of 50k, we have a 2,3, 50k matrix for our two input
+examples, 6 words in total. The 50k dimension represents our vocabulary
+size, and if we apply the softmax function to the tensor, we get
+the probability score for all tokens/word in the vocab, pr. token. 
+
+For example the word "life" would likely have a high probablilty 
+on the long tensor of probabilities found after the softmax is applied. 
+
+But apparently not, as the example illustrates how the correct
+word only as a probability of 0.6. Anyhow, using the argmax
+function will select the highest probability and use that. 
+

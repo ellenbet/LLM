@@ -90,7 +90,56 @@ def create_dataloader_v1(txt,
     )
 
     return dataloader
-    
+
+def generate_text_simple(model, idx, max_new_tokens, context_size):
+    for _ in range(max_new_tokens):
+        idx_cond = idx[:, -context_size : ]
+
+        with torch.no_grad():
+            logits = model(idx_cond)
+        
+        #( batch, n_tokens, vocab_size) becomes (batch, vocab_size)
+        logits = logits[:, -1, :]
+        probas = torch.softmax(logits, dim = -1)
+        idx_next = torch.argmax(probas, dim = -1, keepdim = True)
+        idx = torch.cat((idx, idx_next), dim = 1)
+    return idx
+
+def text_to_token_ids(text, tokenizer):
+    encoded = tokenizer.encode(text, allowed_special={'<|endoftext|>'})
+    encoded_tensor = torch.tensor(encoded).unsqueeze(0) #batch dimension/matrix created
+    return encoded_tensor
+
+def token_ids_to_text(token_ids, tokenizer):
+    flat = token_ids.squeeze(0) #remove batch dimension/make flat
+    return tokenizer.decode(flat.tolist())
+
+
+# Loss functions
+def calc_loss_batch(input_batch, target_batch, model, device):
+    input_batch, target_batch = input_batch.to(device), target_batch.to(device)
+    logits = model(input_batch)
+    loss = torch.nn.functional.cross_entropy(logits.flatten(0, 1))
+    return loss
+
+def calc_loss_loader(data_loader, model, device, num_batches = None):
+    total_loss = 0.
+    if len(data_loader) == 0:
+        return float("nan")
+    elif num_batches == None: 
+        num_batches = len(data_loader)
+    else: 
+        # in case of non-consistenct between loader and batch size
+        num_batches = min(num_batches, len(data_loader))
+    for input_batch, target_batch in data_loader:
+        loss = calc_loss_batch(input_batch, target_batch, model, device)
+        total_loss += loss.item()
+    return total_loss / num_batches
+
+
+
+
+
 
 
 

@@ -1,6 +1,7 @@
 import tiktoken
 import torch
 from gpt import *
+from utils import generate_text_simple, text_to_token_ids, token_ids_to_text
 
 tokenizer = tiktoken.get_encoding("gpt2")
 
@@ -119,6 +120,3 @@ total_size_bytes = total_params * 4
 total_size_mb = total_size_bytes / (1024 * 1024)
 
 print(f"Total size of the model: {total_size_mb:.2f} MB") # emb_dim = 768 is the small GPT2
-
-
-
