@@ -2,7 +2,7 @@ from importlib.metadata import version
 import torch
 from gpt import *
 import tiktoken
-from utils import generate_text_simple, text_to_token_ids, token_ids_to_text, create_dataloader_v1
+from utils import generate_text_simple, text_to_token_ids, token_ids_to_text, create_dataloader_v1, calc_loss_loader, train_model_simple
 import matplotlib
 import numpy
 import tensorflow
@@ -116,22 +116,21 @@ print("All tokens:", train_tokens + val_tokens)
 #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # testing mps for m1 mac
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-elif torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
-    device = torch.device("cpu")
-
-print(f"Using {device} device.")
+#if torch.cuda.is_available():
+#    device = torch.device("cuda")
+#elif torch.backends.mps.is_available():
+#    device = torch.device("mps")
+#else:
+#    device = torch.device("cpu")
+#
+#print(f"Using {device} device.")
 # doesn't work...
 
 just_mps = "mps"
-mps_altered = "mps:0"
 
 # just mps
 device = torch.device(just_mps)
-print(f"Using {device} device, but is it available? {torch.backends.mps.is_available()}")
+print(f"Using {device} device, but is it available?  - {torch.backends.mps.is_available()}")
 
 mps_test = [torch.backends.mps.is_built(), torch.backends.mps.is_available()]
 mps_test_name = ["built", "available"]
@@ -139,12 +138,27 @@ mps_test_name = ["built", "available"]
 for n, t in zip(mps_test_name, mps_test):
     print("mps is", n, ":", t)
 
-# mps altered
-device = torch.device(mps_altered)
-print(f"Using {device} device, but is it available? {torch.backends.mps.is_available()}")
+"""
+Note to self: mps issues is fixed by updating 
+OS on mac. 
 
-mps_test = [torch.backends.mps.is_built(), torch.backends.mps.is_available()]
-mps_test_name = ["built", "available"]
+Also - functionality depends on specifying model device as below
+"""
+model = model.to(device)
+with torch.no_grad(): 
+    #since we're not training, gradients are disabled
+    train_loss = calc_loss_loader(train_loader, model, device)
+    val_loss = calc_loss_loader(val_loader, model, device)
 
-for n, t in zip(mps_test_name, mps_test):
-    print("mps is", n, ":", t)
+print("training loss", train_loss)
+print("test loss/val loss", val_loss)
+# it works! 
+
+optimizer = torch.optim.AdamW(model.parameters(), lr = 0.0004, weight_decay = 0.1)
+num_epochs = 10
+train_losses, val_losses, tokens_seen = train_model_simple(
+    model, train_loader, val_loader, optimizer, device, 
+    num_epochs = num_epochs, eval_freq = 5, eval_iter = 5,
+    start_context = "Every effort moves you", tokenizer = tokenizer)
+
+

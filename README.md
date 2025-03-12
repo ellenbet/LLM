@@ -11,7 +11,7 @@ python3 -m pip install -e .
 TBA
 
 ## Plan
-Build an LLM from scratch using Raschka's newest book, do something cool with it after. Distillation to create an automatic epigenomic annotator? 
+Build an LLM from scratch using Raschka's newest book, do something cool with it after. Distillation to create an automatic epigenomic annotator? RAG?
 
 
 ## Authors
