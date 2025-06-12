@@ -14,9 +14,16 @@
 !requirements.txt
 *.tsv
 *.csv
+*.json
+*.pth
+*.pdf
+
 
 # ignore venv 
 llm-venv
+
+# ignore gtp2 weigts
+testing-scripts/gpt2
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

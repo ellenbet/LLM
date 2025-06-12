@@ -2,17 +2,19 @@ from importlib.metadata import version
 import torch
 from gpt import *
 import tiktoken
-from utils import generate_text_simple, text_to_token_ids, token_ids_to_text, create_dataloader_v1, calc_loss_loader, train_model_simple
-import matplotlib
-import numpy
+from utils import generate_text_simple, text_to_token_ids, token_ids_to_text, create_dataloader_v1, calc_loss_loader, train_model_simple, set_plt_params
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
+import numpy 
 import tensorflow
 import os 
 import urllib.request
 tokenizer = tiktoken.get_encoding("gpt2")
 
 pkgs = ["matplotlib", 
+        "seaborn",
         "numpy", 
-        "tiktoken", 
+        "tiktoken", # For tokenizer library
         "torch",
         "tensorflow" # For OpenAI's pretrained weights
        ]
@@ -20,7 +22,7 @@ for p in pkgs:
     print(f"{p} version: {version(p)}")
 
 GPT_CONFIG_124M["context_length"] = 256 # lessen computational load
-
+set_plt_params()
 torch.manual_seed(123)
 # ps - this includes bias = False and drop_rate = 0.1, nowadays droprate = 0 during LLM training
 model = GPTModel(GPT_CONFIG_124M)
@@ -126,17 +128,18 @@ print("All tokens:", train_tokens + val_tokens)
 #print(f"Using {device} device.")
 # doesn't work...
 
-just_mps = "mps"
+#just_mps = "cpu"
+cpu = "cpu"
 
 # just mps
-device = torch.device(just_mps)
-print(f"Using {device} device, but is it available?  - {torch.backends.mps.is_available()}")
+#device = torch.device(just_mps)
+device = torch.device(cpu)
+#print(f"Using {device} device, but is it available?  - {torch.backends.mps.is_available()}")
+#mps_test = [torch.backends.mps.is_built(), torch.backends.mps.is_available()]
+#mps_test_name = ["built", "available"]
 
-mps_test = [torch.backends.mps.is_built(), torch.backends.mps.is_available()]
-mps_test_name = ["built", "available"]
-
-for n, t in zip(mps_test_name, mps_test):
-    print("mps is", n, ":", t)
+#for n, t in zip(mps_test_name, mps_test):
+#    print("mps is", n, ":", t)
 
 """
 Note to self: mps issues is fixed by updating 
@@ -144,6 +147,9 @@ OS on mac.
 
 Also - functionality depends on specifying model device as below
 """
+train_losses = []
+test_losses = []
+
 model = model.to(device)
 with torch.no_grad(): 
     #since we're not training, gradients are disabled
@@ -155,10 +161,38 @@ print("test loss/val loss", val_loss)
 # it works! 
 
 optimizer = torch.optim.AdamW(model.parameters(), lr = 0.0004, weight_decay = 0.1)
-num_epochs = 10
+num_epochs = 3
 train_losses, val_losses, tokens_seen = train_model_simple(
     model, train_loader, val_loader, optimizer, device, 
     num_epochs = num_epochs, eval_freq = 5, eval_iter = 5,
-    start_context = "Every effort moves you", tokenizer = tokenizer)
+    start_context = "Every effort moves you ", tokenizer = tokenizer)
+
+
+def plot_eval(epochs_seen, tokens_seen, train_losses, val_losses, train_label, val_label, y_label, save_as):
+    fig, ax1 = plt.subplots(figsize=(5, 3))
+    ax1.plot(epochs_seen, train_losses, label = train_label)
+    ax1.plot(epochs_seen, val_losses, linestyle = "-.", label = val_label)
+    ax1.set_xlabel("Epochs")
+    ax1.set_ylabel(y_label)
+    ax1.legend(loc = "upper right")
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax2 = ax1.twiny()
+    ax2.plot(tokens_seen, train_losses, alpha = 0)
+    fig.tight_layout()
+    plt.savefig(save_as, bbox_inches = "tight")
+    plt.show()
+
+train_losses = numpy.array(train_losses)
+test_losses = numpy.array(test_losses)
+#epochs_tensor = torch.linspace(0, num_epochs, len(train_losses))
+#plot_eval(epochs_tensor, tokens_seen, train_losses, val_losses, "Training loss", "Validation loss", "Loss", save_as = "losses_pretraining_test.pdf")
+#plot_eval(epochs_tensor, tokens_seen, numpy.exp(train_losses), numpy.exp(val_losses), "Training perplexity", "Validation perplexity" ,"Perplexity", save_as = "perplexity_pretraining_test.pdf")
+
+generate(model, text_to_token_ids("Every effort moves you", tokenizer), 
+         max_new_tokens = 15, 
+         context_size = GPT_CONFIG_124M["context_length"],
+         top_k = 25,
+         temperature = 1.4)
+
 
 

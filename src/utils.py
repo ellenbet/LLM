@@ -3,10 +3,97 @@
 import re
 import torch
 import tiktoken
+import seaborn as sns
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
+from matplotlib.ticker import MaxNLocator
 
 
-# Tokenizer from Raschka's LLM book
+def format_input(entry):
+    instruction_text = (
+        f"Below is an instruction that describes a task. "
+        f"Write a response that appropriately completes the request."
+        f"\n\n### Instruction:\n{entry['instruction']}"
+    )
+
+    input_text = f"\n\n### Input:\n{entry['input']}" if entry["input"] else ""
+
+    return instruction_text + input_text
+
+def custom_collate_fn(batch, pad_token_id=50256, ignore_index=-100, allowed_max_length=None, device="cpu"):
+    # Find the longest sequence in the batch
+    batch_max_length = max(len(item)+1 for item in batch)
+
+    # Pad and prepare inputs and targets
+    inputs_lst, targets_lst = [], []
+
+    for item in batch:
+        new_item = item.copy()
+        # Add an <|endoftext|> token
+        new_item += [pad_token_id]
+        # Pad sequences to max_length
+        padded = (
+            new_item + [pad_token_id] *
+            (batch_max_length - len(new_item))
+        )
+        inputs = torch.tensor(padded[:-1])  # Truncate the last token for inputs
+        targets = torch.tensor(padded[1:])  # Shift +1 to the right for targets
+
+        # New: Replace all but the first padding tokens in targets by ignore_index
+        mask = targets == pad_token_id
+        indices = torch.nonzero(mask).squeeze()
+        if indices.numel() > 1:
+            targets[indices[1:]] = ignore_index
+
+        # New: Optionally truncate to maximum sequence length
+        if allowed_max_length is not None:
+            inputs = inputs[:allowed_max_length]
+            targets = targets[:allowed_max_length]
+
+        inputs_lst.append(inputs)
+        targets_lst.append(targets)
+
+    # Convert list of inputs and targets to tensors and transfer to target device
+    inputs_tensor = torch.stack(inputs_lst).to(device)
+    targets_tensor = torch.stack(targets_lst).to(device)
+
+    return inputs_tensor, targets_tensor
+
+
+def format_input(entry):
+    instruction_text = (
+        f"Below is an instruction that describes a task. "
+        f"Write a response that appropriately completes the request."
+        f"\n\n### Instruction:\n{entry['instruction']}"
+    )
+
+    input_text = f"\n\n### Input:\n{entry['input']}" if entry["input"] else ""
+
+    return instruction_text + input_text
+
+
+class InstructionDataset(Dataset):
+    def __init__(self, data, tokenizer):
+        self.data = data
+
+        # Pre-tokenize texts
+        self.encoded_texts = []
+        for entry in data:
+            instruction_plus_input = format_input(entry)
+            response_text = f"\n\n### Response:\n{entry['output']}"
+            full_text = instruction_plus_input + response_text
+            self.encoded_texts.append(
+                tokenizer.encode(full_text)
+            )
+
+    def __getitem__(self, index):
+        return self.encoded_texts[index]
+
+    def __len__(self):
+        return len(self.data)
+
+
+# Tokenizer from Raschka's LLM book - "homemade" rather than tiktiokens tokenizer
 class Tokenizer:
     """
     Class creates an instance that takes in a vocabulary (from a set {} object) 
@@ -98,8 +185,43 @@ def generate_text_simple(model, idx, max_new_tokens, context_size):
         
         #( batch, n_tokens, vocab_size) becomes (batch, vocab_size)
         logits = logits[:, -1, :]
-        probas = torch.softmax(logits, dim = -1)
-        idx_next = torch.argmax(probas, dim = -1, keepdim = True)
+        #probas = torch.softmax(logits, dim = -1)
+        idx_next = torch.argmax(logits, dim = -1, keepdim= True)#probas, dim = -1, keepdim = True)
+        idx = torch.cat((idx, idx_next), dim = 1)
+    return idx
+
+def softmax_with_temperature(logits, temperature):
+    scaled_logits = logits/temperature # this is just temperature scaling - if temp > 1 -> more uniform dist, else sharper dist
+    return torch.softmax(scaled_logits, dim = 0)
+
+def generate(model, idx, max_new_tokens, context_size, temperature = 0.0, top_k = None, eos_id = None):
+    for _ in range(max_new_tokens):
+        idx_cond = idx[:, - context_size: ]
+        with torch.no_grad():
+            logits = model(idx_cond)
+        logits = logits[:, -1, :]
+
+        if top_k is not None:
+            top_logits, _ = torch.topk(logits, top_k)
+            min_val = top_logits[:, -1]
+
+            # put all non-topk logits to -inf
+            logits = torch.where(
+                logits < min_val,
+                torch.tensor(float('-inf')).to(logits.device),
+                logits
+            )
+
+        if temperature > 0.0:
+            logits = logits/temperature
+            probs = torch.softmax(logits, dim = -1)
+            # probabilistic sampling
+            idx_next = torch.multinomial(probs, num_samples = 1)
+        else: 
+            idx_next = torch.argmax(logits, dim = -1, keepdim = True)
+        
+        if idx_next == eos_id:
+            break
         idx = torch.cat((idx, idx_next), dim = 1)
     return idx
 
@@ -124,21 +246,25 @@ def calc_loss_loader(data_loader, model, device, num_batches = None):
     total_loss = 0.
     if len(data_loader) == 0:
         return float("nan")
-    elif num_batches == None: 
+    elif num_batches is None: 
         num_batches = len(data_loader)
     else: 
         # in case of non-consistenct between loader and batch size
         num_batches = min(num_batches, len(data_loader))
-    for input_batch, target_batch in data_loader:
-        loss = calc_loss_batch(input_batch, target_batch, model, device)
-        total_loss += loss.item()
+    for i, (input_batch, target_batch) in enumerate(data_loader):
+        if i < num_batches:
+            loss = calc_loss_batch(input_batch, target_batch, model, device)
+            total_loss += loss.item()
+        else:
+            break
     return total_loss / num_batches
 
 
 def train_model_simple(model, train_loader, val_loader, optimizer, device,
                        num_epochs, eval_freq, eval_iter, start_context, tokenizer):
     train_losses, val_losses, track_tokens_seen = [], [], []
-    tokens_seen, global_step = 0, -1
+    tokens_seen = 0
+    global_step = -1
 
     for epoch in range(num_epochs):
         model.train() # set to training model
@@ -181,10 +307,46 @@ def generate_and_print_sample(model, tokenizer, device, start_context):
     with torch.no_grad():
         token_ids = generate_text_simple(
             model = model, idx = encoded, 
-            max_new_tokens = 50, context_size = context_size )
-    decoded_text = token_ids_to_text(token_ids, tokenizer)
-    print(decoded_text.replace("\n", " "))
+            max_new_tokens = 50, context_size = context_size)
+        decoded_text = token_ids_to_text(token_ids, tokenizer)
+        print(decoded_text.replace("\n", " "))
     model.train()
+
+
+def set_plt_params(remove_grid=False):
+    """Set parameters and use seaborn theme to plot."""
+    sns.set_theme()
+    if remove_grid:
+        sns.set_style("whitegrid", {"axes.grid": False})
+    params = {
+        "font.family": "Serif",
+        "font.serif": "Roman", 
+        "text.usetex": True,
+        "axes.titlesize": "large",
+        "axes.labelsize": "large",
+        "xtick.labelsize": "large",
+        "ytick.labelsize": "large",
+        "legend.fontsize": "medium", 
+        "savefig.dpi": 300, 
+        "axes.grid" : False
+    }
+    plt.rcParams.update(params)
+
+def plot_eval(epochs_seen, tokens_seen, train_losses, val_losses, train_label, val_label, y_label, save_as):
+    fig, ax1 = plt.subplots(figsize=(5, 3))
+    ax1.plot(epochs_seen, train_losses, label = train_label)
+    ax1.plot(epochs_seen, val_losses, linestyle = "-.", label = val_label)
+    ax1.set_xlabel("Epochs")
+    ax1.set_ylabel(y_label)
+    ax1.legend(loc = "upper right")
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax2 = ax1.twiny()
+    ax2.plot(tokens_seen, train_losses, alpha = 0)
+    fig.tight_layout()
+    plt.savefig(save_as, bbox_inches = "tight")
+    plt.show()
+
+
 
 
 

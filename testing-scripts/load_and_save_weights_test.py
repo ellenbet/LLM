@@ -1,19 +1,14 @@
+from importlib.metadata import version
 import torch
-from utils import train_model_simple, create_dataloader_v1
 from gpt import *
 import tiktoken
+from utils import generate_text_simple, text_to_token_ids, token_ids_to_text, create_dataloader_v1, calc_loss_loader, train_model_simple, set_plt_params, plot_eval
+import matplotlib.pyplot as plt
+import numpy 
+import tensorflow
 import os 
 import urllib.request
 tokenizer = tiktoken.get_encoding("gpt2")
-
-if torch.backends.mps.is_available():
-    device = torch.device("mps")
-elif torch.cuda.is_available():
-    device = torch.device("cuda")
-else:
-    device = torch.device("cpu")
-print(f"Using device: {device}")
-
 """
 Training our GPT model with the-verdixt.txt
 
@@ -31,11 +26,12 @@ else:
     with open(file_path, "r", encoding="utf-8") as file:
         text_data = file.read()
 
-
 train_ratio = 0.9
 split_idx = int(train_ratio*len(text_data))
 train_data = text_data[: split_idx]
-val_data = text_data[split_idx: ]
+val_data = text_data[split_idx:]
+
+torch.manual_seed(123)
 
 train_loader = create_dataloader_v1(
     train_data,
@@ -52,20 +48,38 @@ val_loader = create_dataloader_v1(
     batch_size = 2,
     max_length = GPT_CONFIG_124M["context_length"],
     stride = GPT_CONFIG_124M["context_length"],
-    drop_last = False, 
-    shuffle = False,
+    drop_last = True, 
+    shuffle = True,
     num_workers = 0
 )
 
-model = GPTModel(GPT_CONFIG_124M)
-model.to(device)
-optimizer = torch.optim.AdamW(model.parameters(), lr = 0.0004, weight_decay = 0.1)
 
-num_epochs = 50
+cpu = "cpu"
+device = torch.device(cpu)
+
+train_losses = []
+test_losses = []
+
+model = GPTModel(GPT_CONFIG_124M)
+model = model.to(device)
+with torch.no_grad(): 
+    #since we're not training, gradients are disabled
+    train_loss = calc_loss_loader(train_loader, model, device)
+    val_loss = calc_loss_loader(val_loader, model, device)
+
+print("training loss", train_loss)
+print("test loss/val loss", val_loss)
+# it works! 
+
+optimizer = torch.optim.AdamW(model.parameters(), lr = 0.0004, weight_decay = 0.1)
+num_epochs = 5
 train_losses, val_losses, tokens_seen = train_model_simple(
     model, train_loader, val_loader, optimizer, device, 
     num_epochs = num_epochs, eval_freq = 5, eval_iter = 5,
-    start_context = "Every effort moves you", tokenizer = tokenizer)
+    start_context = "Every effort moves you ", tokenizer = tokenizer)
 
+torch.save(model.state_dict(), "test_model.pth")
 
-
+model2 = GPTModel(GPT_CONFIG_124M)
+model2.load_state_dict(torch.load("test_model.pth"), map_location = device)
+model.eval()

@@ -1,5 +1,7 @@
 import torch.nn as nn
+import numpy as np
 import torch
+from utils import *
 
 GPT_CONFIG_124M = {
     "vocab_size": 50257,    # Vocabulary size
@@ -121,15 +123,15 @@ class MultiHeadAttention(nn.Module):
         queries = queries.transpose(1, 2)
         values = values.transpose(1, 2)
 
-        # Compute scaled dot-product attention (aka self-attention) with a causal mask
+        # Compute scalxed dot-product attention (aka self-attention) with a causal mask
         attn_scores = queries @ keys.transpose(2, 3)  # Dot product for each head
 
         # Original mask truncated to the number of tokens and converted to boolean
         mask_bool = self.mask.bool()[:num_tokens, :num_tokens]
 
         # Use the mask to fill attention scores
-        attn_scores.masked_fill_(mask_bool, -torch.inf)
-        attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=-1)
+        attn_scores.masked_fill_(mask_bool, -torch.inf) # minus inf instead of 0
+        attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim = -1)
         attn_weights = self.dropout(attn_weights)
 
         # Shape: (b, num_tokens, num_heads, head_dim)
@@ -200,3 +202,122 @@ class GPTModel(nn.Module):
         x = self.final_norm(x)
         logits = self.out_head(x)
         return logits
+    
+def assign(left, right):
+    if left.shape != right.shape:
+        raise ValueError(f"Shape mismatch: left : {left.shape} while right: {right.shape}")
+    return torch.nn.Parameter(torch.tensor(right))
+    
+def load_weights_into_gpt(gpt, params):
+    gpt.pos_emb.weight = assign(gpt.pos_emb.weight, params['wpe'])
+    gpt.tok_emb.weight = assign(gpt.tok_emb.weight, params['wte'])
+    
+    for b in range(len(params["blocks"])):
+        q_w, k_w, v_w = np.split(
+            (params["blocks"][b]["attn"]["c_attn"])["w"], 3, axis=-1)
+        gpt.trf_blocks[b].att.W_query.weight = assign(
+            gpt.trf_blocks[b].att.W_query.weight, q_w.T)
+        gpt.trf_blocks[b].att.W_key.weight = assign(
+            gpt.trf_blocks[b].att.W_key.weight, k_w.T)
+        gpt.trf_blocks[b].att.W_value.weight = assign(
+            gpt.trf_blocks[b].att.W_value.weight, v_w.T)
+
+        q_b, k_b, v_b = np.split(
+            (params["blocks"][b]["attn"]["c_attn"])["b"], 3, axis=-1)
+        gpt.trf_blocks[b].att.W_query.bias = assign(
+            gpt.trf_blocks[b].att.W_query.bias, q_b)
+        gpt.trf_blocks[b].att.W_key.bias = assign(
+            gpt.trf_blocks[b].att.W_key.bias, k_b)
+        gpt.trf_blocks[b].att.W_value.bias = assign(
+            gpt.trf_blocks[b].att.W_value.bias, v_b)
+
+        gpt.trf_blocks[b].att.out_proj.weight = assign(
+            gpt.trf_blocks[b].att.out_proj.weight, 
+            params["blocks"][b]["attn"]["c_proj"]["w"].T)
+        gpt.trf_blocks[b].att.out_proj.bias = assign(
+            gpt.trf_blocks[b].att.out_proj.bias, 
+            params["blocks"][b]["attn"]["c_proj"]["b"])
+
+        gpt.trf_blocks[b].ff.layers[0].weight = assign(
+            gpt.trf_blocks[b].ff.layers[0].weight, 
+            params["blocks"][b]["mlp"]["c_fc"]["w"].T)
+        gpt.trf_blocks[b].ff.layers[0].bias = assign(
+            gpt.trf_blocks[b].ff.layers[0].bias, 
+            params["blocks"][b]["mlp"]["c_fc"]["b"])
+        gpt.trf_blocks[b].ff.layers[2].weight = assign(
+            gpt.trf_blocks[b].ff.layers[2].weight, 
+            params["blocks"][b]["mlp"]["c_proj"]["w"].T)
+        gpt.trf_blocks[b].ff.layers[2].bias = assign(
+            gpt.trf_blocks[b].ff.layers[2].bias, 
+            params["blocks"][b]["mlp"]["c_proj"]["b"])
+
+        gpt.trf_blocks[b].norm1.scale = assign(
+            gpt.trf_blocks[b].norm1.scale, 
+            params["blocks"][b]["ln_1"]["g"])
+        gpt.trf_blocks[b].norm1.shift = assign(
+            gpt.trf_blocks[b].norm1.shift, 
+            params["blocks"][b]["ln_1"]["b"])
+        gpt.trf_blocks[b].norm2.scale = assign(
+            gpt.trf_blocks[b].norm2.scale, 
+            params["blocks"][b]["ln_2"]["g"])
+        gpt.trf_blocks[b].norm2.shift = assign(
+            gpt.trf_blocks[b].norm2.shift, 
+            params["blocks"][b]["ln_2"]["b"])
+
+    gpt.final_norm.scale = assign(gpt.final_norm.scale, params["g"])
+    gpt.final_norm.shift = assign(gpt.final_norm.shift, params["b"])
+    gpt.out_head.weight = assign(gpt.out_head.weight, params["wte"])
+
+"""
+with open("small-text-sample.txt", "r", encoding="utf-8") as f:
+    raw_text = f.read()
+
+def create_dataloader(txt, batch_size=4, max_length=256, stride=128, shuffle=True):
+    # Initialize the tokenizer
+    tokenizer = tiktoken.get_encoding("gpt2")
+
+    # Create dataset
+    dataset = GPTDatasetV1(txt, tokenizer, max_length, stride)
+
+    # Create dataloader
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+
+    return dataloader
+
+tokenizer = tiktoken.get_encoding("gpt2")
+encoded_text = tokenizer.encode(raw_text)
+
+vocab_size = 50257
+output_dim = 256
+max_len = 1024
+context_length = max_len
+
+
+token_embedding_layer = nn.Embedding(vocab_size, output_dim)
+pos_embedding_layer = torch.nn.Embedding(context_length, output_dim)
+
+max_length = 4
+dataloader = create_dataloader(raw_text, batch_size=8, max_length=max_length, stride=max_length)
+
+max_length = 4
+output_dim = 256
+context_length = max_length
+d_in = output_dim
+d_out = d_in
+
+
+for batch in dataloader:
+    x, y = batch
+
+    token_embeddings = token_embedding_layer(x)
+    pos_embeddings = pos_embedding_layer(torch.arange(max_length))
+
+    input_embeddings = token_embeddings + pos_embeddings
+
+    break
+mha = MultiHeadAttention(d_in, d_out, context_length, 0.0, num_heads=2)
+batch = input_embeddings
+context_vecs = mha(batch)
+
+print("context_vecs.shape:", context_vecs.shape)"
+"""
