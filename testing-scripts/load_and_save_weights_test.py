@@ -83,3 +83,4 @@ torch.save(model.state_dict(), "test_model.pth")
 model2 = GPTModel(GPT_CONFIG_124M)
 model2.load_state_dict(torch.load("test_model.pth"), map_location = device)
 model.eval()
+
