@@ -60,18 +60,6 @@ def custom_collate_fn(batch, pad_token_id=50256, ignore_index=-100, allowed_max_
     return inputs_tensor, targets_tensor
 
 
-def format_input(entry):
-    instruction_text = (
-        f"Below is an instruction that describes a task. "
-        f"Write a response that appropriately completes the request."
-        f"\n\n### Instruction:\n{entry['instruction']}"
-    )
-
-    input_text = f"\n\n### Input:\n{entry['input']}" if entry["input"] else ""
-
-    return instruction_text + input_text
-
-
 class InstructionDataset(Dataset):
     def __init__(self, data, tokenizer):
         self.data = data

@@ -2,9 +2,8 @@ from importlib.metadata import version
 import torch
 from gpt import *
 import tiktoken
-from utils import generate_text_simple, text_to_token_ids, token_ids_to_text, create_dataloader_v1, calc_loss_loader, train_model_simple, set_plt_params
+from utils import generate_text_simple, text_to_token_ids, token_ids_to_text, create_dataloader_v1, calc_loss_loader, train_model_simple, set_plt_params, plot_eval
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 import numpy 
 import tensorflow
 import os 
@@ -166,21 +165,6 @@ train_losses, val_losses, tokens_seen = train_model_simple(
     model, train_loader, val_loader, optimizer, device, 
     num_epochs = num_epochs, eval_freq = 5, eval_iter = 5,
     start_context = "Every effort moves you ", tokenizer = tokenizer)
-
-
-def plot_eval(epochs_seen, tokens_seen, train_losses, val_losses, train_label, val_label, y_label, save_as):
-    fig, ax1 = plt.subplots(figsize=(5, 3))
-    ax1.plot(epochs_seen, train_losses, label = train_label)
-    ax1.plot(epochs_seen, val_losses, linestyle = "-.", label = val_label)
-    ax1.set_xlabel("Epochs")
-    ax1.set_ylabel(y_label)
-    ax1.legend(loc = "upper right")
-    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax2 = ax1.twiny()
-    ax2.plot(tokens_seen, train_losses, alpha = 0)
-    fig.tight_layout()
-    plt.savefig(save_as, bbox_inches = "tight")
-    plt.show()
 
 train_losses = numpy.array(train_losses)
 test_losses = numpy.array(test_losses)
